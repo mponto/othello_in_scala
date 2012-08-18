@@ -1,42 +1,126 @@
-object Game {
-  def main(args: Array[String]) {
-    var turn = "b"
-    println("Choose black or white.")
-    var line = readLine
-    var failFlag = false
-    var field = new Field()
+import scala.actors.Actor
+import scala.actors.Actor._
 
-    while(true) {
+case object Human
+case object Machine
+case object FieldManager
+case object Map
 
-      if (failFlag) {
-        println("Put failed.")
-        failFlag = false
+class Human extends Actor {
+  def act() {
+    loop {
+      receive {
+	case "next" =>
+          println("Your turn.")
+          var intarr = readLine.split(",").map((s:String) => {s.toInt})
+          var pos = Pair(intarr(0), intarr(1))
+          sender ! (Human, pos)
+	case "puterr" =>
+          println("You can't put there.")
+          var intarr = readLine.split(",").map((s:String) => {s.toInt})
+          var pos = Pair(intarr(0), intarr(1))
+          sender ! (Human, pos)
+	case "end" =>
+          println("Human died.")
+          exit()
       }
-      field.putmap
-      println("Please put")
+    }
+  }
+}
 
-      var intarr = readLine.split(",").map((s:String) => {s.toInt})
-      var pos = Pair(intarr(0), intarr(1))
+class Machine extends Actor {
+  def act() {
+    loop {
+      receive {
+	case "next" =>
+          println("Machine turn.")
+          var intarr = readLine.split(",").map((s:String) => {s.toInt})
+          var pos = Pair(intarr(0), intarr(1))
+          sender ! (Machine, pos)
 
-      if( field.put(turn, pos) ) turn = backside(turn)
-      else failFlag = true
+	case "puterr" =>
+          println("You can't put there.")
+          var intarr = readLine.split(",").map((s:String) => {s.toInt})
+          var pos = Pair(intarr(0), intarr(1))
+          sender ! (Machine, pos)
+
+	case "end" =>
+          println("Human died.")
+          exit()
+      }
+    }
+  }
+}
+
+class FieldManager(human:Actor, machine:Actor) extends Actor {
+  def act() {
+    var field = new Field()
+    println("b/w ?")
+    var human_turn = readLine
+    field.putmap
+    if (human_turn == "b") {
+      human ! "next"
+    } else if(human_turn == "w") {
+      machine ! "next"
+    } else {
+      human ! "end"
+      machine ! "end"
+      exit()
+    }
+
+    loop {
+      receive {
+        case (Human, p:Pair[Any,Any]) =>
+	  println("recieve from human")
+          if(!p._1.isInstanceOf[Int] || !p._2.isInstanceOf[Int]) {
+            human ! "puterr"
+          }
+          var place:Pair[Int, Int] = Pair(p._1.asInstanceOf[Int], p._2.asInstanceOf[Int])
+          if(field.put(human_turn, place)) {
+	    field.putmap
+            machine ! "next"
+          } else {
+            human ! "puterr"
+          }
+        case (Machine, p:Pair[Any,Any]) =>
+	  println("recieve from machine")
+          if(!p._1.isInstanceOf[Int] || !p._2.isInstanceOf[Int]) {
+            machine ! "puterr"
+          }
+          var place:Pair[Int, Int] = Pair(p._1.asInstanceOf[Int], p._2.asInstanceOf[Int])
+          if (field.put(backside(human_turn), place)) {
+	    field.putmap
+            human ! "next"
+          } else {
+            machine ! "puterr"
+          }
+      }
     }
   }
 
   def backside(color:String):String = {
-    ( color match {
+    (color match {
       case "b" => "w"
       case "w" => "b"
       case _ => "e"
     })
   }
+}
 
+object Othello extends App {
+  val human = new Human
+  val machine = new Machine
+  val field_manager = new FieldManager(human, machine)
+  println("Human coming..")
+  human.start
+  println("Machine coming..")
+  machine.start
+  println("FieldManager coming..")
+  field_manager.start
 }
 
 class Map(vals:Array[Array[String]]) {
-
   var inner_array:Array[Array[String]] = vals
-
   def get_position(pair:Pair[Int,Int]) = inner_array(pair._1)(pair._2)
   def set_position(value:String, pair:Pair[Int,Int]) = { inner_array(pair._1)(pair._2) = value }
   def print_map = {
@@ -75,6 +159,7 @@ class Field() {
   val downleft:Pair[Int,Int] = Pair(-1,1)
 
   def put(color:String, pos:Pair[Int,Int]):Boolean = {
+
     if(this.isPuttable(pos)) {
       return this.reverse(color, pos)
     } else {
